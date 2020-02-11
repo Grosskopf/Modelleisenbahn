@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Threading;
 using UnityEngine;
 using System;
+using System.Net;
 using System.IO;
 using uPLibrary.Networking.M2Mqtt;
 using uPLibrary.Networking.M2Mqtt.Messages;
@@ -25,8 +26,8 @@ public class websockethandler : MonoBehaviour
     public string topic_Temperature;
     public string topic_updatespeed;
     public string topic_stop;
-    public string websocket_url="";
-    public int websocket_port=8080;
+    public string websocket_url="192.168.1.199";
+    public int websocket_port=1883;
     public double currentspeed = 0;
     public List<String> markers;
     public List<double> distances;
@@ -41,7 +42,9 @@ public class websockethandler : MonoBehaviour
     public InputField textfield_tempTopic;
     public InputField textfield_webSocket;
     public InputField textfield_accelleration;
-
+    public InputField textfield_username;
+    public InputField textfield_password;
+    public InputField textfield_email;
 
     public Dropdown tagconfig;
     public Dropdown markerfirst;
@@ -51,6 +54,9 @@ public class websockethandler : MonoBehaviour
     private float markertime;
     private double maxspeed;
     private double accelleration=0.0f;
+    private string username;
+    private string password;
+    private string email;
     //Parse.
     
     //ClientWebSocket WebSocket;
@@ -74,7 +80,7 @@ public class websockethandler : MonoBehaviour
         client.MqttMsgPublishReceived += client_MqttMsgPublishReceived;
 
         string clientId = Guid.NewGuid().ToString();
-        client.Connect(clientId);
+        client.Connect(clientId,username,password);
 
         client.Subscribe(new string[] { topic_markers }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
         client.Subscribe(new string[] { topic_Temperature }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
@@ -154,7 +160,7 @@ public class websockethandler : MonoBehaviour
         }
         if (e.Topic.Contains(topic_Temperature))
         {
-            out_text.text = e.Message.ToString();
+            out_text.text = e.Message.ToString()+"°C";
         }
     }
 
@@ -206,18 +212,18 @@ public class websockethandler : MonoBehaviour
             {
                 accelleration = double.Parse(line.Substring(15));
             }
-            /*else if (line.StartsWith("user:"))
+            else if (line.StartsWith("user:"))
             {
-                username = line.Substring(5);
+                username = line.Substring(6);
             }
             else if (line.StartsWith("passwd:"))
             {
-                password = line.Substring(7);
+                password = line.Substring(8);
             }
             else if (line.StartsWith("email:"))
             {
-                email = line.Substring(6);
-            }*/
+                email = line.Substring(7);
+            }
         }
         textfield_webSocket.text = websocket_url + ":" + websocket_port.ToString();
         textfield_tempTopic.text = topic_Temperature;
@@ -225,6 +231,9 @@ public class websockethandler : MonoBehaviour
         textfield_stopTopic.text = topic_stop;
         textfield_speedTopic.text = topic_updatespeed;
         textfield_accelleration.text = accelleration.ToString();
+        textfield_username.text = username;
+        textfield_password.text = password;
+        textfield_email.text = email;
         markerfirst.options[0].text = firstmarker;
         if (!String.IsNullOrEmpty(websocket_url))
         {
@@ -241,9 +250,9 @@ public class websockethandler : MonoBehaviour
         writer.WriteLine("stoptopic: " + topic_stop);
         writer.WriteLine("firstmarker: " + firstmarker);
         writer.WriteLine("accelleration: " + accelleration.ToString());
-        /*writer.WriteLine("user:" + username);
-        writer.WriteLine("passwd:" + password);
-        writer.WriteLine("email:" + email);*/
+        writer.WriteLine("user: " + username);
+        writer.WriteLine("passwd: " + password);
+        writer.WriteLine("email: " + email);
         writer.Close();
     }
 
@@ -338,10 +347,22 @@ public class websockethandler : MonoBehaviour
         topic_updatespeed = toset;
         writeOutConfig();
     }
+    public void OnUsernameChanged(string toset)
+    {
+        username = toset;
+        writeOutConfig();
+    }
+    public void OnPasswordChanged(string toset)
+    {
+        password = toset;
+        writeOutConfig();
+    }
     public void OnSpeedChanged(Single toset)
     {
         currentspeed = toset;
-        client.Publish(topic_updatespeed, System.Text.Encoding.UTF8.GetBytes("speed to: " + toset), MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE, true);
+        HttpWebRequest request = (HttpWebRequest)WebRequest.Create("http://192.168.1.102/motor?direction=1&speed=" + (70 + toset).ToString() + "&mode=0");
+        request.GetResponse();
+        client.Publish(topic_updatespeed, System.Text.Encoding.UTF8.GetBytes("speed to: " + 70+toset), MqttMsgBase.QOS_LEVEL_EXACTLY_ONCE, true);
     }
 
     public void ToggleConfig()
