@@ -26,6 +26,7 @@ public class websockethandler : MonoBehaviour
     public string topic_Temperature;
     public string topic_updatespeed;
     public string topic_stop;
+    public string topic_Light;
     public string websocket_url="192.168.1.199";
     public int websocket_port=1883;
     public double currentspeed = 0;
@@ -40,6 +41,7 @@ public class websockethandler : MonoBehaviour
     public InputField textfield_markerpos;
     public InputField textfield_speedTopic;
     public InputField textfield_stopTopic;
+    public InputField textfield_lightTopic;
     public InputField textfield_tagTopic;
     public InputField textfield_tempTopic;
     public InputField textfield_webSocket;
@@ -51,22 +53,24 @@ public class websockethandler : MonoBehaviour
     public Dropdown tagconfig;
     public Dropdown markerfirst;
     public Transform settings;
+    public Transform train;
+    public Transform cammera;
     private bool settings_open = false;
     private Move_along_path movement;
-    private float markertime;
-    private double maxspeed;
+    private DateTime markertime;
+    public double maxspeed;
     private double accelleration=0.0f;
     public string username;
     public string password;
     public string email;
-
+    private double roundtriptime;
     //Parse.
     
     //ClientWebSocket WebSocket;
     // Start is called before the first frame update
     void Start()
     {
-        markertime = DateTime.Now.Second;
+        markertime = DateTime.Now;
         filename = Application.persistentDataPath + filename;
         movement = GetComponent<Move_along_path>();
         Debug.Log("starting...");
@@ -94,7 +98,17 @@ public class websockethandler : MonoBehaviour
         print("using username: " + username);
         print("using password: " + password);
         byte code=client.Connect(clientId,username.Trim(),password.Trim());
-        print("got code from login: "+code.ToString());
+        if (code == 4)
+        {
+            print("username or password wrong");
+        }else if (code == 0)
+        {
+            print("connected nicely");
+        }
+        else
+        {
+            print("got code from login: " + code.ToString());
+        }
         client.Subscribe(new string[] {"#"}, new byte[] {MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE});
         //client.Subscribe(new string[] { topic_markers }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
         //client.Subscribe(new string[] { topic_Temperature }, new byte[] { MqttMsgBase.QOS_LEVEL_AT_LEAST_ONCE });
@@ -204,12 +218,11 @@ public class websockethandler : MonoBehaviour
                     {
                         distance = movement.maxdistance - last_markerpos + markerpos;
                     }
-
-                    if (distance / ((float)DateTime.Now.Millisecond/1000 - markertime) > maxspeed)
-                    {
-                        maxspeed = distance / ((float)DateTime.Now.Millisecond / 1000 - markertime);
-                    }
-                    markertime = (float)DateTime.Now.Millisecond / 1000;
+                    print("distance is: "+distance);
+                    double timepassed = ((float)((DateTime.Now - markertime).TotalMilliseconds) / 1000);
+                    maxspeed = distance / timepassed;
+                    roundtriptime = timepassed*(movement.maxdistance / distance);
+                    markertime = DateTime.Now;
                     movement.DistanceTraveled = markerpos;
                     accelleration = max_accelleration;
                 }
@@ -218,7 +231,7 @@ public class websockethandler : MonoBehaviour
         }
         if (e.Topic.Trim() == topic_stop.Trim())
         {
-            print("stopping/starting");
+            //print("stopping/starting");
             if ((messagetext.Contains("steht"))){
                 movement.MoveSpeed = 0.0f;
                 accelleration = 0.0f;
@@ -231,10 +244,17 @@ public class websockethandler : MonoBehaviour
         }
         if (e.Topic.Trim() == topic_Temperature.Trim())
         {
-            print("temperature set"+messagetext);
-            _out_string = messagetext + "°C";
+            //print("temperature set"+messagetext);
+            _out_string +="Temperatursensor meldet: "+ messagetext + "°C\n";
             //out_text.text = messagetext + "°C";
-            
+
+        }
+        if (e.Topic.Trim() == topic_Light.Trim())
+        {
+            //print("temperature set"+messagetext);
+            _out_string +="Lichtsensor meldet widerstand: "+ messagetext+"\n";
+            //out_text.text = messagetext + "°C";
+
         }
     }
 
@@ -284,7 +304,8 @@ public class websockethandler : MonoBehaviour
             }
             else if (line.StartsWith("accelleration:"))
             {
-                accelleration = double.Parse(line.Substring("accelleration: ".Length));
+                max_accelleration = double.Parse(line.Substring("accelleration: ".Length));// print("got accelleration: " + accelleration.ToString()+" from: "+line);
+
             }
             else if (line.StartsWith("user:"))
             {
@@ -299,12 +320,14 @@ public class websockethandler : MonoBehaviour
                 email = line.Substring("email: ".Length);
             }
         }
+        //print("loaded");
         textfield_webSocket.text = websocket_url + ":" + websocket_port.ToString();
         textfield_tempTopic.text = topic_Temperature;
         textfield_tagTopic.text = topic_markers;
-        textfield_stopTopic.text = topic_stop;
+        //textfield_stopTopic.text = topic_stop;
+        textfield_lightTopic.text = topic_Light;
         textfield_speedTopic.text = topic_updatespeed;
-        textfield_accelleration.text = accelleration.ToString();
+        textfield_accelleration.text = max_accelleration.ToString();
         textfield_username.text = username;
         textfield_password.text = password;
         textfield_email.text = email;
@@ -316,6 +339,7 @@ public class websockethandler : MonoBehaviour
     }
     void writeOutConfig()
     {
+        File.Create(filename).Close();
         StreamWriter writer = new StreamWriter(filename, true);
         writer.WriteLine("WS_URL: " + websocket_url + ":" + websocket_port.ToString());
         writer.WriteLine("markertopic: " + topic_markers);
@@ -323,7 +347,7 @@ public class websockethandler : MonoBehaviour
         writer.WriteLine("speedtopic: " + topic_updatespeed);
         writer.WriteLine("stoptopic: " + topic_stop);
         writer.WriteLine("firstmarker: " + firstmarker);
-        writer.WriteLine("accelleration: " + accelleration.ToString());
+        writer.WriteLine("accelleration: " + max_accelleration.ToString());
         writer.WriteLine("user: " + username);
         writer.WriteLine("passwd: " + password);
         writer.WriteLine("email: " + email);
@@ -332,9 +356,10 @@ public class websockethandler : MonoBehaviour
         textfield_webSocket.text = websocket_url + ":" + websocket_port.ToString();
         textfield_tempTopic.text = topic_Temperature;
         textfield_tagTopic.text = topic_markers;
-        textfield_stopTopic.text = topic_stop;
+        //textfield_stopTopic.text = topic_stop;
+        textfield_lightTopic.text = topic_Light;
         textfield_speedTopic.text = topic_updatespeed;
-        textfield_accelleration.text = accelleration.ToString();
+        textfield_accelleration.text = max_accelleration.ToString();
         textfield_username.text = username;
         textfield_password.text = password;
         textfield_email.text = email;
@@ -346,10 +371,26 @@ public class websockethandler : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        out_text.text = _out_string;
+        if ((markertime - DateTime.Now).TotalMilliseconds >roundtriptime)
+        {
+            maxspeed = 0;
+        }
+        if (_out_string != "")
+        {
+            out_text.text = _out_string;
+            GameObject textobj = Instantiate(out_text.gameObject, train.position, Quaternion.LookRotation(train.position - cammera.position));
+            ((TextMesh)textobj.GetComponent(typeof(TextMesh))).text = _out_string;
+            //textobj.transform.localScale = new Vector3(0.005f, 0.005f, 0.005f);
+            textobj.transform.SetParent(transform.parent);
+            textobj.transform.localScale = new Vector3(0.003f, 0.003f, 0.003f);
+            ((ConstantForce)textobj.GetComponent(typeof(ConstantForce))).enabled = true;
+            Destroy(textobj, 2.0f);
+            _out_string = "";
+        }
+        
         if (movement.MoveSpeed < maxspeed)
         {
-            movement.MoveSpeed += accelleration * Time.deltaTime;
+            movement.MoveSpeed = Math.Min(accelleration * Time.deltaTime+movement.MoveSpeed,maxspeed);
         }
         else
         {
@@ -369,15 +410,17 @@ public class websockethandler : MonoBehaviour
         {
 
         }
+        writeOutConfig();
     }
     public void OnEditTagChanged(int toset)
     {
         marker_to_edit = toset;
         textfield_markerpos.text=distances[marker_to_edit].ToString();
+        writeOutConfig();
     }
     public void OnFirstTagChanged(int toset)
     {
-        print("SetfirstTag: " + toset.ToString());
+        //print("SetfirstTag: " + toset.ToString());
         if (toset != 0)
         {
             for (int i = 0; i < toset; i++)
@@ -423,6 +466,15 @@ public class websockethandler : MonoBehaviour
     public void OnStopTopicChanged(string toset)
     {
         topic_stop = toset;
+        if (!String.IsNullOrEmpty(websocket_url))
+        {
+            ReConnectWS();
+        }
+        writeOutConfig();
+    }
+    public void OnLightTopicChanged(string toset)
+    {
+        topic_Light = toset;
         if (!String.IsNullOrEmpty(websocket_url))
         {
             ReConnectWS();
